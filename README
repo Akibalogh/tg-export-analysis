@@ -1,0 +1,43 @@
+# tg-export-analysis
+
+This repo analyzes exported Telegram conversations to identify leads or prospects who stopped responding. The goal is to generate follow-up reports so we can re-engage and recover dropped conversations.
+
+## Features
+
+- Parses Telegram JSON export data
+- Identifies participants and message gaps
+- Highlights last response date and unanswered follow-ups
+- Generates actionable reports for outreach
+
+## How to Export Telegram Data
+
+1. Open **Telegram Desktop**.
+2. Go to **Settings → Advanced → Export Telegram data**.
+3. Configure the export:
+   - **Uncheck**: *Photos*, *Story archive*
+   - **Check**: *Personal chats*, *Private groups*
+   - Under *Private groups*, **uncheck**: *Only my messages*
+   - Under *Location and format*, select: **Machine-readable JSON**
+4. Click **Export**, then download when ready.
+
+Place the resulting `result.json` file into this project directory.
+
+## Usage
+
+Run the report generator:
+
+```python
+python generate_followups_report.py
+```
+
+Review the output to identify follow-up opportunities.
+
+## Requirements
+
+- Python 3.8+
+- See `requirements.txt` (if applicable)
+
+## License
+
+MIT
+
