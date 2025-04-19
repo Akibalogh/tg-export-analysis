@@ -1,6 +1,6 @@
 # tg-export-analysis
 
-This repo analyzes exported Telegram conversations to identify leads or prospects who stopped responding. The goal is to generate follow-up reports so we can re-engage and recover dropped conversations.
+This repository analyzes exported Telegram conversations to identify leads or prospects who stopped responding. The goal is to generate follow-up reports so we can re-engage and recover dropped conversations.
 
 ## Features
 
@@ -26,7 +26,7 @@ Place the resulting `result.json` file into this project directory.
 
 Run the report generator:
 
-```python
+```
 python generate_followups_report.py
 ```
 
