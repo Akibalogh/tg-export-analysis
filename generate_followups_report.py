@@ -1,6 +1,7 @@
 import json
 import pandas as pd
 import re
+from datetime import datetime
 
 # === Load the input ===
 
@@ -98,6 +99,8 @@ output_df = df[['Sales Rep', 'Client', 'Date', 'Message ID', 'Message']].rename(
     'Message ID': 'Last Message ID'
 })
 
-output_file = 'followups_with_reps.xlsx'
+date_str = datetime.today().strftime('%m%d%y')
+output_file = f'Unresponded TGs {date_str}.xlsx'
+
 output_df.to_excel(output_file, index=False)
 print(f"Saved: {output_file}")
