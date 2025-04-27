@@ -5,7 +5,7 @@ from telethon import TelegramClient
 from telethon.tl.types import Channel, Chat
 from dotenv import load_dotenv
 import os
-import pandas as pd
+from collections import defaultdict
 
 load_dotenv()
 
@@ -29,23 +29,23 @@ rep_handles = {
 
 client = TelegramClient('session_name', api_id, api_hash)
 
-async def fetch_sales_rep_messages():
+async def weekly_sales_rep_summary():
     await client.start(phone=phone)
 
     now = datetime.now(timezone.utc)
-    yesterday = now - timedelta(days=1)
-    messages_data = []
+    week_ago = now - timedelta(days=7)
+    rep_message_counts = defaultdict(int)
 
-    logging.info("Fetching recent sales rep messages...")
+    logging.info("Generating weekly summary (7 days)...")
 
     async for dialog in client.iter_dialogs():
         entity = dialog.entity
         if isinstance(entity, (Channel, Chat)) and getattr(entity, 'megagroup', False):
-            logging.info(f"Checking group: {entity.title}")
+            logging.info(f"Scanning group: {entity.title}")
 
             try:
-                async for message in client.iter_messages(entity, offset_date=now, limit=20):
-                    if message.date < yesterday:
+                async for message in client.iter_messages(entity, offset_date=now, limit=100):
+                    if message.date < week_ago:
                         break
 
                     sender = await message.get_sender()
@@ -54,15 +54,7 @@ async def fetch_sales_rep_messages():
 
                         for handle, alias in rep_handles.items():
                             if handle in sender_name:
-                                msg_time = message.date.strftime("%Y-%m-%d %H:%M:%S")
-                                msg_text = message.message.replace("\n", " ").strip() if message.message else "[No text]"
-                                messages_data.append({
-                                    'Group': entity.title,
-                                    'Rep Name': alias,
-                                    'Message': msg_text,
-                                    'Time (UTC)': msg_time
-                                })
-                                logging.info(f"[{entity.title}] {alias} at {msg_time}: {msg_text}")
+                                rep_message_counts[alias] += 1
                                 break
 
                 await asyncio.sleep(0.3)
@@ -71,19 +63,12 @@ async def fetch_sales_rep_messages():
                 logging.warning(f"Error: {e}. Sleeping 15s.")
                 await asyncio.sleep(15)
 
-    if messages_data:
-        df = pd.DataFrame(messages_data)
-        df.to_excel('sales_rep_activity.xlsx', index=False)
-        logging.info("✅ Exported to 'sales_rep_activity.xlsx'")
+    print("\n📌 Sales Rep Activity Summary (Last 7 Days):")
+    if rep_message_counts:
+        for rep, count in sorted(rep_message_counts.items(), key=lambda x: -x[1]):
+            print(f"- {rep}: {count} messages")
     else:
-        logging.info("✅ No recent sales rep messages found. No Excel file created.")
-
-    print("\n📌 Detailed Sales Rep Activity (last 24 hours):")
-    if messages_data:
-        for msg in messages_data:
-            print(f"- [{msg['Group']}] {msg['Rep Name']} at {msg['Time (UTC)']}: {msg['Message']}")
-    else:
-        print("No recent activity found.")
+        print("No sales rep activity found in the past 7 days.")
 
 with client:
-    client.loop.run_until_complete(fetch_sales_rep_messages())
+    client.loop.run_until_complete(weekly_sales_rep_summary())
