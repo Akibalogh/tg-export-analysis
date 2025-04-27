@@ -1,3 +1,4 @@
+.env
 .DS_Store
 safe_env
 result.json
