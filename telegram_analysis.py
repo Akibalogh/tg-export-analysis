@@ -2,7 +2,7 @@ from telethon import TelegramClient
 from telethon.tl.types import Channel, Chat
 from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
-import logging, os
+import logging, os, asyncio
 
 load_dotenv()
 
@@ -39,24 +39,29 @@ async def sales_rep_recent_activity():
         entity = dialog.entity
         if isinstance(entity, (Channel, Chat)) and getattr(entity, 'megagroup', False):
             logging.info(f"Scanning group: {entity.title}")
-            async for message in client.iter_messages(entity, offset_date=now, limit=20):
-                if message.date < yesterday:
-                    break  # older than 24 hours, stop checking messages
-                sender = await message.get_sender()
-                if sender:
-                    sender_name = sender.first_name or ""
-                    sender_last_name = sender.last_name or ""
-                    full_sender_name = f"{sender_name} {sender_last_name}".strip()
 
-                    for handle in rep_handles:
-                        alias = rep_handles[handle]
-                        if handle in full_sender_name:
-                            active_groups[entity.title] = alias
-                            logging.info(f"Found message from '{alias}' in '{entity.title}' at {message.date.isoformat()}")
-                            break
+            try:
+                async for message in client.iter_messages(entity, offset_date=now, limit=5):
+                    if message.date < yesterday:
+                        break
+                    sender = await message.get_sender()
+                    if sender:
+                        sender_name = f"{sender.first_name or ''} {sender.last_name or ''}".strip()
 
-                if entity.title in active_groups:
-                    break  # Stop after finding one rep message per group
+                        for handle in rep_handles:
+                            alias = rep_handles[handle]
+                            if handle in sender_name:
+                                active_groups[entity.title] = alias
+                                logging.info(f"Message from '{alias}' in '{entity.title}' at {message.date.isoformat()}")
+                                break
+
+                    if entity.title in active_groups:
+                        break
+            except Exception as e:
+                logging.warning(f"Encountered error: {e}. Sleeping for 15 seconds.")
+                await asyncio.sleep(15)
+
+            await asyncio.sleep(0.5)  # critical sleep between API calls to avoid throttling
 
     logging.info("\n✅ Analysis completed.\n")
 
