@@ -1,8 +1,11 @@
+import logging
+import asyncio
+from datetime import datetime, timedelta, timezone
 from telethon import TelegramClient
 from telethon.tl.types import Channel, Chat
-from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
-import logging, os, asyncio
+import os
+import pandas as pd
 
 load_dotenv()
 
@@ -26,51 +29,61 @@ rep_handles = {
 
 client = TelegramClient('session_name', api_id, api_hash)
 
-async def sales_rep_recent_activity():
+async def fetch_sales_rep_messages():
     await client.start(phone=phone)
 
     now = datetime.now(timezone.utc)
     yesterday = now - timedelta(days=1)
-    active_groups = {}
+    messages_data = []
 
-    logging.info("Checking groups for sales rep activity...")
+    logging.info("Fetching recent sales rep messages...")
 
     async for dialog in client.iter_dialogs():
         entity = dialog.entity
         if isinstance(entity, (Channel, Chat)) and getattr(entity, 'megagroup', False):
-            logging.info(f"Scanning group: {entity.title}")
+            logging.info(f"Checking group: {entity.title}")
 
             try:
-                async for message in client.iter_messages(entity, offset_date=now, limit=5):
+                async for message in client.iter_messages(entity, offset_date=now, limit=20):
                     if message.date < yesterday:
                         break
+
                     sender = await message.get_sender()
                     if sender:
                         sender_name = f"{sender.first_name or ''} {sender.last_name or ''}".strip()
 
-                        for handle in rep_handles:
-                            alias = rep_handles[handle]
+                        for handle, alias in rep_handles.items():
                             if handle in sender_name:
-                                active_groups[entity.title] = alias
-                                logging.info(f"Message from '{alias}' in '{entity.title}' at {message.date.isoformat()}")
+                                msg_time = message.date.strftime("%Y-%m-%d %H:%M:%S")
+                                msg_text = message.message.replace("\n", " ").strip() if message.message else "[No text]"
+                                messages_data.append({
+                                    'Group': entity.title,
+                                    'Rep Name': alias,
+                                    'Message': msg_text,
+                                    'Time (UTC)': msg_time
+                                })
+                                logging.info(f"[{entity.title}] {alias} at {msg_time}: {msg_text}")
                                 break
 
-                    if entity.title in active_groups:
-                        break
+                await asyncio.sleep(0.3)
+
             except Exception as e:
-                logging.warning(f"Encountered error: {e}. Sleeping for 15 seconds.")
+                logging.warning(f"Error: {e}. Sleeping 15s.")
                 await asyncio.sleep(15)
 
-            await asyncio.sleep(0.5)  # critical sleep between API calls to avoid throttling
-
-    logging.info("\n✅ Analysis completed.\n")
-
-    print("\n📌 Private groups with sales rep activity (last 24 hours):")
-    if active_groups:
-        for group, rep in active_groups.items():
-            print(f"- {group} (Rep: {rep})")
+    if messages_data:
+        df = pd.DataFrame(messages_data)
+        df.to_excel('sales_rep_activity.xlsx', index=False)
+        logging.info("✅ Exported to 'sales_rep_activity.xlsx'")
     else:
-        print("No recent sales rep activity found.")
+        logging.info("✅ No recent sales rep messages found. No Excel file created.")
+
+    print("\n📌 Detailed Sales Rep Activity (last 24 hours):")
+    if messages_data:
+        for msg in messages_data:
+            print(f"- [{msg['Group']}] {msg['Rep Name']} at {msg['Time (UTC)']}: {msg['Message']}")
+    else:
+        print("No recent activity found.")
 
 with client:
-    client.loop.run_until_complete(sales_rep_recent_activity())
+    client.loop.run_until_complete(fetch_sales_rep_messages())
