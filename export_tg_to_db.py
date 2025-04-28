@@ -3,7 +3,7 @@ import asyncio
 from datetime import datetime, timezone
 from telethon import TelegramClient
 from telethon.tl.types import Channel, Chat, User, ChannelForbidden
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, Text
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, Text, UniqueConstraint
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from dotenv import load_dotenv
@@ -29,15 +29,19 @@ SessionLocal = sessionmaker(bind=engine)
 class Message(Base):
     __tablename__ = 'messages'
     id = Column(Integer, primary_key=True, autoincrement=True)
-    tg_message_id = Column(Integer)
-    chat_id = Column(Integer)
+    tg_message_id = Column(Integer, nullable=False)
+    chat_id = Column(Integer, nullable=False)
     chat_title = Column(String(255))
     sender_id = Column(Integer)
     sender_name = Column(String(255))
     date = Column(DateTime)
     text = Column(Text)
 
-# Create the messages table if it doesn't exist
+    __table_args__ = (
+        UniqueConstraint('tg_message_id', 'chat_id', name='uix_tg_message_chat'),
+    )
+
+# Create tables if not exist
 Base.metadata.create_all(bind=engine)
 
 # Setup Telegram client
@@ -66,6 +70,11 @@ async def dump_all_messages():
                     if not message.message:
                         continue
 
+                    # Check if message already exists
+                    existing = db.query(Message).filter_by(tg_message_id=message.id, chat_id=chat_id).first()
+                    if existing:
+                        continue  # Skip duplicate
+
                     sender = None
                     sender_name = None
                     try:
@@ -76,7 +85,7 @@ async def dump_all_messages():
                             elif hasattr(sender, 'title'):
                                 sender_name = sender.title
                     except Exception:
-                        sender_name = None  # In case sender cannot be fetched
+                        sender_name = None
 
                     msg = Message(
                         tg_message_id=message.id,
@@ -85,7 +94,7 @@ async def dump_all_messages():
                         sender_id=message.from_id.user_id if message.from_id else None,
                         sender_name=sender_name,
                         date=message.date,
-                        text=message.message.replace('\x00', '')  # Remove any null bytes
+                        text=message.message.replace('\x00', '')  # Clean null bytes
                     )
                     db.add(msg)
 
@@ -103,6 +112,6 @@ async def dump_all_messages():
     db.close()
     logging.info("✅ Finished dumping all messages into 'messages.db'.")
 
-# Run the export
+# Run export
 with client:
     client.loop.run_until_complete(dump_all_messages())
