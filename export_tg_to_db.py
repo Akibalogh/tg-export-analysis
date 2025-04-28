@@ -2,7 +2,8 @@ import logging
 import asyncio
 from datetime import datetime, timezone
 from telethon import TelegramClient
-from telethon.tl.types import Channel, Chat, User, ChannelForbidden
+from telethon.errors import FloodWaitError
+from telethon.tl.types import Channel, Chat, User, PeerUser
 from sqlalchemy import create_engine, Column, Integer, String, DateTime, Text, UniqueConstraint
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
@@ -41,7 +42,7 @@ class Message(Base):
         UniqueConstraint('tg_message_id', 'chat_id', name='uix_tg_message_chat'),
     )
 
-# Create tables if not exist
+# Create tables
 Base.metadata.create_all(bind=engine)
 
 # Setup Telegram client
@@ -58,7 +59,6 @@ async def dump_all_messages():
     async for dialog in client.iter_dialogs():
         entity = dialog.entity
 
-        # Only DMs, private groups, and accessible channels
         if isinstance(entity, (User, Chat, Channel)):
             chat_id = entity.id
             chat_title = getattr(entity, 'title', None) or getattr(entity, 'username', None) or getattr(entity, 'first_name', None) or 'Unknown'
@@ -73,11 +73,14 @@ async def dump_all_messages():
                     # Check if message already exists
                     existing = db.query(Message).filter_by(tg_message_id=message.id, chat_id=chat_id).first()
                     if existing:
-                        continue  # Skip duplicate
+                        continue  # skip duplicates
 
-                    sender = None
                     sender_name = None
+                    sender_id = None
                     try:
+                        if message.from_id and isinstance(message.from_id, PeerUser):
+                            sender_id = message.from_id.user_id
+
                         sender = await message.get_sender()
                         if sender:
                             if hasattr(sender, 'first_name'):
@@ -91,7 +94,7 @@ async def dump_all_messages():
                         tg_message_id=message.id,
                         chat_id=chat_id,
                         chat_title=chat_title,
-                        sender_id=message.from_id.user_id if message.from_id else None,
+                        sender_id=sender_id,
                         sender_name=sender_name,
                         date=message.date,
                         text=message.message.replace('\x00', '')  # Clean null bytes
@@ -101,13 +104,13 @@ async def dump_all_messages():
                 db.commit()
                 await asyncio.sleep(0.5)
 
-            except ChannelForbidden:
-                logging.warning(f"Skipping forbidden channel: {chat_title}")
-                continue
+            except FloodWaitError as e:
+                logging.warning(f"Rate limit hit. Sleeping for {e.seconds} seconds.")
+                await asyncio.sleep(e.seconds)
 
             except Exception as e:
-                logging.warning(f"Error on {chat_title}: {e}. Sleeping 15s.")
-                await asyncio.sleep(15)
+                logging.warning(f"Error fetching from {chat_title}: {e}. Skipping this chat.")
+                continue
 
     db.close()
     logging.info("✅ Finished dumping all messages into 'messages.db'.")
