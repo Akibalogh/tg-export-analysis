@@ -1,3 +1,5 @@
+*.db
+*.xlsx
 session_name.session
 session_name.session-journal
 .env
