@@ -5,7 +5,7 @@ from telethon import TelegramClient
 from telethon.tl.types import Channel, Chat
 from dotenv import load_dotenv
 import os
-from collections import defaultdict
+import pandas as pd
 
 load_dotenv()
 
@@ -29,14 +29,14 @@ rep_handles = {
 
 client = TelegramClient('session_name', api_id, api_hash)
 
-async def weekly_sales_rep_summary():
+async def export_sales_rep_messages():
     await client.start(phone=phone)
 
     now = datetime.now(timezone.utc)
     week_ago = now - timedelta(days=7)
-    rep_message_counts = defaultdict(int)
+    messages_data = []
 
-    logging.info("Generating weekly summary (7 days)...")
+    logging.info("Fetching sales rep messages for the last 7 days...")
 
     async for dialog in client.iter_dialogs():
         entity = dialog.entity
@@ -54,7 +54,14 @@ async def weekly_sales_rep_summary():
 
                         for handle, alias in rep_handles.items():
                             if handle in sender_name:
-                                rep_message_counts[alias] += 1
+                                msg_time = message.date.strftime("%Y-%m-%d %H:%M:%S")
+                                msg_text = message.message.replace("\n", " ").strip() if message.message else "[No text]"
+                                messages_data.append({
+                                    'Date': msg_time,
+                                    'Sales Rep': alias,
+                                    'Telegram Group': entity.title,
+                                    'Message Sent': msg_text
+                                })
                                 break
 
                 await asyncio.sleep(0.3)
@@ -63,12 +70,19 @@ async def weekly_sales_rep_summary():
                 logging.warning(f"Error: {e}. Sleeping 15s.")
                 await asyncio.sleep(15)
 
-    print("\n📌 Sales Rep Activity Summary (Last 7 Days):")
-    if rep_message_counts:
-        for rep, count in sorted(rep_message_counts.items(), key=lambda x: -x[1]):
-            print(f"- {rep}: {count} messages")
+    if messages_data:
+        df = pd.DataFrame(messages_data)
+        df.to_excel('sales_rep_activity_7_days.xlsx', index=False)
+        logging.info("✅ Exported to 'sales_rep_activity_7_days.xlsx'")
     else:
-        print("No sales rep activity found in the past 7 days.")
+        logging.info("✅ No sales rep messages found in the last 7 days.")
+
+    print("\n📌 Export completed. Messages found:")
+    if messages_data:
+        for msg in messages_data:
+            print(f"- [{msg['Date']}] {msg['Sales Rep']} in {msg['Telegram Group']}: {msg['Message Sent']}")
+    else:
+        print("No messages from sales reps in the past 7 days.")
 
 with client:
-    client.loop.run_until_complete(weekly_sales_rep_summary())
+    client.loop.run_until_complete(export_sales_rep_messages())
