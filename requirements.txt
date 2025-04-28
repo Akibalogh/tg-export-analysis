@@ -1,0 +1,9 @@
+telethon
+sqlalchemy
+pandas
+openpyxl
+python-dotenv
+gspread
+gspread-dataframe
+requests
+
