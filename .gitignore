@@ -1,3 +1,4 @@
+*.csv
 messages*
 *.db
 *.xlsx
