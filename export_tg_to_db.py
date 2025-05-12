@@ -50,46 +50,51 @@ client = TelegramClient('session_name', api_id, api_hash)
 
 async def dump_all_messages():
     await client.start(phone=phone)
-
     db = SessionLocal()
     now = datetime.now(timezone.utc)
 
-    logging.info("Starting full Telegram export...")
+    logging.info("Starting incremental Telegram export...")
 
     async for dialog in client.iter_dialogs():
         entity = dialog.entity
 
         if isinstance(entity, (User, Chat, Channel)):
             chat_id = entity.id
-            chat_title = getattr(entity, 'title', None) or getattr(entity, 'username', None) or getattr(entity, 'first_name', None) or 'Unknown'
+            chat_title = (
+                getattr(entity, 'title', None) or
+                getattr(entity, 'username', None) or
+                getattr(entity, 'first_name', None) or
+                'Unknown'
+            )
 
-            logging.info(f"Fetching messages from: {chat_title}")
+            # Fetch the latest message ID for this chat
+            latest_message = db.query(Message).filter_by(chat_id=chat_id).order_by(Message.tg_message_id.desc()).first()
+            latest_message_id = latest_message.tg_message_id if latest_message else 0
+
+            logging.info(f"Fetching messages from {chat_title} after message ID {latest_message_id}")
 
             try:
-                async for message in client.iter_messages(entity, reverse=False):
+                async for message in client.iter_messages(entity, min_id=latest_message_id):
                     if not message.message:
                         continue
 
-                    # Check if message already exists
-                    existing = db.query(Message).filter_by(tg_message_id=message.id, chat_id=chat_id).first()
-                    if existing:
-                        continue  # skip duplicates
-
                     sender_name = None
                     sender_id = None
+
                     try:
                         if message.from_id and isinstance(message.from_id, PeerUser):
                             sender_id = message.from_id.user_id
 
                         sender = await message.get_sender()
                         if sender:
-                            if hasattr(sender, 'first_name'):
-                                sender_name = f"{sender.first_name or ''} {sender.last_name or ''}".strip()
-                            elif hasattr(sender, 'title'):
+                            sender_name = f"{sender.first_name or ''} {sender.last_name or ''}".strip()
+                            if hasattr(sender, 'title'):
                                 sender_name = sender.title
+
                     except Exception:
                         sender_name = None
 
+                    # Create and add message to the DB
                     msg = Message(
                         tg_message_id=message.id,
                         chat_id=chat_id,
@@ -113,7 +118,7 @@ async def dump_all_messages():
                 continue
 
     db.close()
-    logging.info("✅ Finished dumping all messages into 'messages.db'.")
+    logging.info("✅ Finished incremental export into 'messages.db'.")
 
 # Run export
 with client:
