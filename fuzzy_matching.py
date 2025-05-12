@@ -2,7 +2,7 @@ import pandas as pd
 from fuzzywuzzy import process
 import re
 
-# Load the CSV files with headers
+# Define local paths
 tg_path = './tg.csv'
 hubspot_path = './hubspot.csv'
 
@@ -35,11 +35,20 @@ def clean_client_name(name):
 # Apply the cleaning function to the TG chat titles
 tg_chats['cleaned_chat_title'] = tg_chats['chat_title'].apply(clean_client_name)
 
+# Check for empty strings and log them
+empty_titles = tg_chats[tg_chats['cleaned_chat_title'] == '']
+if not empty_titles.empty:
+    print(f"Warning: Found {len(empty_titles)} empty cleaned titles. Skipping these.")
+
 # Initialize a list to store the matches
 matches = []
 
 # Iterate through each cleaned Telegram chat title
 for tg_chat, original_chat in zip(tg_chats['cleaned_chat_title'], tg_chats['chat_title']):
+    # Skip empty cleaned chat titles
+    if tg_chat == '':
+        continue
+
     # Apply fuzzy matching against raw HubSpot deal names
     match, score, _ = process.extractOne(tg_chat, hubspot_deals['hubspot_deal_name'])
     
@@ -61,7 +70,7 @@ matches_df = pd.DataFrame(matches)
 # Filter for matches with a score above a certain threshold (e.g., 70)
 matches_df = matches_df[matches_df['match_score'] >= 70]
 
-# Save to CSV
+# Save to CSV in the same directory
 output_path = './chat_mappings.csv'
 matches_df.to_csv(output_path, index=False)
 
